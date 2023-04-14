@@ -114,7 +114,7 @@ for i = 1:length(F)
         Out = playrec('play',Tone_,ChannelOut);
         
         while ~playrec('isFinished',Out)
-            pause(0.01)
+            pause(0.001)
             ButtonDown = app.RespApp.Pushed;
             if isobject(app.ard)
                 ArdButDown = ~app.ard.readDigitalPin(app.ardconf.SWState);
