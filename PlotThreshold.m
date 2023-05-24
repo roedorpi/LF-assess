@@ -4,8 +4,8 @@ app = varargin{1};
 load('IP30_ID205470_0_40dBAtt_14_10_2022.mat','LdB')
 ldB = [LdB(1,2:4,1)' LdB(1,2:4,2)'];
 
-File = app.datafiles(contains({app.datafiles.name},varargin{2}));
-fio = matfile([File.folder,'/',File.name],"Writable",false);
+File = varargin{2}{:};
+fio = matfile([app.DataPath,'/',File],"Writable",false);
 N = fieldnames(fio);
 Thresh = N(contains(N,'Thres_'));
 Stmt = N(contains(N,'STMT_'));
@@ -42,14 +42,14 @@ for i = 1:length(Thresh)
         
             tr_s(:,1,j) = tr(:,1,j)+ldB(j,Ear);
             tr_s(:,2:3,j) = tr(:,2:3,j);
-            lv = find(tr_s(:,3,j)== 0,1)-1;
-            if isempty(lv)
+            %lv = find(tr_s(:,3,j)== 0,1)-1;
+            %if isempty(lv)
                pfc(j,Ear) = plot(a(Ear),Indx(tr_s(:,2,j)==1),tr_s(tr_s(:,2,j)==1,1,j),'+','Color',Coll(j,:));
                plot(a(Ear),Indx(tr_s(:,2,j)==0),tr_s(tr_s(:,2,j)==0,1,j),'o','Color',Coll(j,:))
-            else
-               pfc(j,Ear) = plot(a(Ear),Indx(tr_s(1:lv,2,j)==1),tr_s(tr_s(1:lv,2,j)==1,1,j),'+','Color',Coll(j,:));
-               plot(a(Ear),Indx(tr_s(1:lv,2,j)==0),tr_s(tr_s(1:lv,2,j)==0,1,j),'o','Color',Coll(j,:))
-            end
+            %else
+            %   pfc(j,Ear) = plot(a(Ear),Indx(tr_s(1:lv,2,j)==1),tr_s(tr_s(1:lv,2,j)==1,1,j),'+','Color',Coll(j,:));
+            %   plot(a(Ear),Indx(tr_s(1:lv,2,j)==0),tr_s(tr_s(1:lv,2,j)==0,1,j),'o','Color',Coll(j,:))
+            %end
         
         Legs{j} = sprintf('%i Hz',t.Estimate.Freqs(j)); 
     end
@@ -97,16 +97,20 @@ for i = 1:length(Stmt)
     a(Ear).Title.String = Title;
 
 end
-for Ear = 3:4
-    if Ear == 3
-        pl = pfc_(strcmp(Ears,'Left'));
-        Le = Legs_(strcmp(Ears,'Left'));
-        
-    else
-        pl = pfc_(strcmp(Ears,'Right'));
-        Le = Legs_(strcmp(Ears,'Right'));
-        
+if exist("pfc_","var")
+    for Ear = 3:4
+        if Ear == 3
+            pl = pfc_(strcmp(Ears,'Left'));
+            Le = Legs_(strcmp(Ears,'Left'));
+            
+        else
+            pl = pfc_(strcmp(Ears,'Right'));
+            Le = Legs_(strcmp(Ears,'Right'));
+            
+        end
+        legend(a(Ear),pl,Le)
     end
-    legend(a(Ear),pl,Le)
-    
+else
+    uialert(app.UIFigure,'There is no valid STM sensitivity data','','Icon','info')
+  
 end
