@@ -1,4 +1,4 @@
-function [stm,tone1, tone2,t] = generate_STM_3(varargin)
+    function [stm,tone1, tone2,t] = generate_STM_3(varargin)
 %function [stm,tone1, tone2,t] = generate_STM_3(cf,fm_CO,fm_Hz,m_dB,T,fs,level,SigFilts,LEQ)
 % Purpose of this function is to generate a STM tone signal with the folowing.
 % Inputs:
