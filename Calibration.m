@@ -12,22 +12,21 @@ if numel(varargin) > 0
     CalibrationFile = varargin{8}; % Stored calibrations use for display.
 else
     %Fc = [50 63 80 100 125 150 200 250 316 400 500 630 800 1000 1250 1500 2000 2500 3150 4000 5000 6300 8000];
-    Fc = [50 63 80 100 125 150 200];
-    Level = 0:-5:-40; %For levels below -200 no output is reproduced. 
-    FileName = sprintf('IP30_ID206465_20dBinGain_stm2_2_%s.mat',datetime("now","Format","ddMMuuuu_HH_mm"));
+    Fc = [50 63 80 100 125 150 200 250 316 400 500 630 800 1000];
+    Level = -50:-5:-100; %For levels below -200 no output is reproduced. 
+    FileName = sprintf('IP30_ID206465_%s.mat',datetime("now","Format","ddMMuuuu_HH_mm"));
     FLow = 50;
     FHigh = 8e3;
-    MeasAmpGain = [20 20];
+    MeasAmpGain = [50 50];
     CalibrateCoupler = false;
-    CalibrationFile = sprintf('KemarMicCalib_%idB_input_gain.mat',MeasAmpGain(1));
+    CalibrationFile = sprintf('KemarMicCalib_%idB_input_gain.mat',0);
 end
-DevFromCalGain = 40;
-StimType = 2;
+StimType = 3;  %% 3 input only, 2 STM stimuli, 1 tone stim at given level
 %%
 fs = 48000;
 Bufsize = 1024;
 AuDev = "ASIO Fireface USB";
-auio =  audioPlayerRecorder;
+auio =  audioPlayerRecorder; 
 auio.Device = AuDev;
 auio.SampleRate = fs;
 auio.SupportVariableSize = true;
@@ -53,8 +52,8 @@ if CalibrateCoupler
         tic 
         Out = [];
         while toc < 5  
-            outsig = Osc();
-            out = auio([outsig, outsig]);
+            %outsig = Osc();
+            out = auio(zeros(auio.BufferSize,2));
             Out = [Out; out];
         end
         plot(1/fs:1/fs:length(Out)/fs, Out(:,i))
@@ -63,7 +62,7 @@ if CalibrateCoupler
         pause % wait for keystroke, change calibrator
     end
     CalSettings = "RME Fireface UCX; input channels 1 & 2;" + ...
-        "Mic polarization 48 volts; Input gain 40 dB;" + ....
+        "Mic polarization 48 volts; Input gain 0 dB;" + ....
         "SC phone output gain -10 dB"; 
     save(CalibrationFile,"CalRMS", "CalTone", "CalSettings");
     
@@ -174,20 +173,26 @@ end
             X = permute(X,[1,3,2]);
             X = reshape(X,[],2);
             X = [X(:,1), -X(:,2)];
+            X = X./10.^(MeasAmpGain/20)./CalRMS; % level adjust
             stimname = sprintf("Freq_%i_att_%i_signal",Fc(l),abs(Level(k)));
-            fileObj.(stimname) = X./10^(DevFromCalGain/20)./CalRMS;
-            LR = oneThirdOctFiltBank(X./10^(DevFromCalGain/20)./CalRMS);
+            fileObj.(stimname) = X;
+            LR = oneThirdOctFiltBank(X);
             LRdB = squeeze(20*log10(rms(LR(fs:end-fs,:,:))/P0));
-            
+            x = X(fs:end-fs,:);
+            x = x.*hamming(length(x),"periodic");                         
+            XdB = 20*log10(abs(2*fft(x)/length(x))/P0);
             stimname = sprintf("Freq_%i_att_%i_thirdlev",Fc(l),abs(Level(k)));
             fileObj.(stimname) = LRdB;
-            
-            PL(1).YData  = [LRdB(:,1); LRdB(end,1)]; 
-            PL(2).YData  = [LRdB(:,2); LRdB(end,2)]; 
-            TP(1).XData = 0:1/fs:length(X)/fs-1/fs;
-            TP(1).YData = X(:,1);
-            TP(2).XData = 0:1/fs:length(X)/fs-1/fs;
-            TP(2).YData = X(:,2);
+            PL(1).XData = 0:fs/length(x):fs - fs/length(x);
+            PL(1).YData  = XdB(:,1);
+            PL(2).XData = 0:fs/length(x):fs - fs/length(x);
+            PL(2).YData  = XdB(:,2);
+            %PL(1).YData  = [LRdB(:,1); LRdB(end,1)]; 
+            %PL(2).YData  = [LRdB(:,2); LRdB(end,2)]; 
+            TP(1).XData = 0:1/fs:length(x)/fs-1/fs;
+            TP(1).YData = x(:,1);
+            TP(2).XData = 0:1/fs:length(x)/fs-1/fs;
+            TP(2).YData = x(:,2);
             fprintf(1,'Chan1: Level: %2.1f dB RMS: %f, Freq: %i\n',...
                 max(LRdB(:,1)),P0*10^(max(LRdB(:,1))/20),F0(LRdB(:,1) == max(LRdB(:,1))))    
             fprintf(1,'Chan2: Level: %2.1f dB, RMS: %f, Freq: %i\n\n',...
