@@ -8,8 +8,10 @@ if numel(varargin) > 0
     FLow = varargin{4}; % lowest frequency of interest for the analysis
     FHigh = varargin{5}; % highest frequency of interest
     CalibrateCoupler = varargin{6}; % boolean to calibrate or measure
-    MeasAmpGain = varargin{7}; % gain on mic preamplifier
-    CalibrationFile = varargin{8}; % Stored calibrations use for display.
+ %   MeasAmpGain = varargin{7}; % gain on mic preamplifier
+    CalibrationFile = varargin{7}; % Stored calibrations use for display.
+    ModFreq = varargin{8}; % modulation frequency and cycles per octave
+    StimType = varargin{9};
 else
     %Fc = [50 63 80 100 125 150 200 250 316 400 500 630 800 1000 1250 1500 2000 2500 3150 4000 5000 6300 8000];
     Fc = [50 63 80 100 125 150 200 250 316 400 500 630 800 1000];
@@ -17,11 +19,11 @@ else
     FileName = sprintf('IP30_ID206465_%s.mat',datetime("now","Format","ddMMuuuu_HH_mm"));
     FLow = 50;
     FHigh = 8e3;
-    MeasAmpGain = [50 50];
     CalibrateCoupler = false;
-    CalibrationFile = sprintf('KemarMicCalib_%idB_input_gain.mat',0);
+    CalibrationFile = sprintf('KemarMicCalib_%idB_input_gain.mat',40);
+    ModFreq = [2 2]; % [24 24]
+    StimType = 2; %% 3 input only, 2 STM stimuli, 1 tone stim at given level
 end
-StimType = 3;  %% 3 input only, 2 STM stimuli, 1 tone stim at given level
 %%
 fs = 48000;
 Bufsize = 1024;
@@ -48,7 +50,7 @@ Osc.Amplitude = 0;
 % card (MeasAmpGain). At the end of each iteration change the
 % calibrator to the next channel. 
 if CalibrateCoupler
-    for i = 1: length(auio.RecorderChannelMapping)
+    for i = [2 1]% length(auio.RecorderChannelMapping)
         tic 
         Out = [];
         while toc < 5  
@@ -56,14 +58,19 @@ if CalibrateCoupler
             out = auio(zeros(auio.BufferSize,2));
             Out = [Out; out];
         end
+        figure(2)
         plot(1/fs:1/fs:length(Out)/fs, Out(:,i))
         CalTone{i} = Out(:,i);
         CalRMS(i) = rms(Out(:,i));
+
         pause % wait for keystroke, change calibrator
     end
+    CalibratorLevel = 20e-6*10^(94/20);
+    CalRMS = CalRMS/CalibratorLevel;
     CalSettings = "RME Fireface UCX; input channels 1 & 2;" + ...
-        "Mic polarization 48 volts; Input gain 0 dB;" + ....
-        "SC phone output gain -10 dB"; 
+        "Mic polarization 48 volts; Input gain 40 dB;" + ....
+        "SC phone output gain -10 dB" + ....  
+        "reference sound pressure level 94 dB"; 
     save(CalibrationFile,"CalRMS", "CalTone", "CalSettings");
     
     return
@@ -94,10 +101,10 @@ yyaxis right;
 PL(2)=stairs(FF,LRdB(:,2));
 
 a.XScale = 'log';
-a.XLim = [FF(1) FF(end)];
-a.YAxis(1).Limits = [-5 120];
+a.XLim = [50 250];%[FF(1) FF(end)];
+a.YAxis(1).Limits = [30 90];
 a.YAxis(1).Label.String = 'dB SPL';
-a.YAxis(2).Limits = [-5 120];
+a.YAxis(2).Limits = [30 90];
 a.YAxis(2).Label.String = 'dB SPL';
 a.XTick = round(F0);
 a.XTickLabel = roundn(F0/1000,-3);
@@ -122,15 +129,13 @@ c.Box = 'on';
 
 %% Probe tone
 fileObj = matfile(FileName,"Writable",true);
-StimLength = 141*auio.BufferSize/fs; %~3seconds
+StimLength = 250*auio.BufferSize/fs; %~3seconds
 Numbuffs = ceil(StimLength*fs/auio.BufferSize);
 if StimType == 2
     SigFilts = load('LoudEQFilters.mat',"Levs","Lfilt","Hlp");
     EarphoneSens = load('IP30_ID205470_0_40dBAtt_14_10_2022.mat','Frequencies','LdB');
     fs_ = fs/10;
 end
-
-
 
 % while j  
     for l = 1:length(Fc)
@@ -154,7 +159,7 @@ end
                 end
             elseif StimType == 2 
                 
-                [smod, ~, ~, ~] = generate_STM_3(Fc(l),2,2,Level(k),141*auio.BufferSize/fs,fs,-10,SigFilts,EarphoneSens,'on','Peak');
+                [smod, ~, ~, ~] = generate_STM_3(Fc(l),ModFreq(1),ModFreq(2),Level(k),250*auio.BufferSize/fs,fs,-30,SigFilts,EarphoneSens,'on','Peak');
                 
                  Diff_in_samples = 141*auio.BufferSize - length(smod);
                  if Diff_in_samples >= 0
@@ -173,14 +178,16 @@ end
             X = permute(X,[1,3,2]);
             X = reshape(X,[],2);
             X = [X(:,1), -X(:,2)];
-            X = X./10.^(MeasAmpGain/20)./CalRMS; % level adjust
+            X = X./CalRMS; % level adjust
             stimname = sprintf("Freq_%i_att_%i_signal",Fc(l),abs(Level(k)));
             fileObj.(stimname) = X;
             LR = oneThirdOctFiltBank(X);
             LRdB = squeeze(20*log10(rms(LR(fs:end-fs,:,:))/P0));
             x = X(fs:end-fs,:);
-            x = x.*hamming(length(x),"periodic");                         
-            XdB = 20*log10(abs(2*fft(x)/length(x))/P0);
+            w = hamming(0.2*fs,"symmetric");
+            w = [w(1:end/2); ones(length(x)-length(w),1); w(end/2+1:end)];
+            x = x.*w;                         
+            XdB = 20*log10(2*abs(fft(x))/length(x)/P0);
             stimname = sprintf("Freq_%i_att_%i_thirdlev",Fc(l),abs(Level(k)));
             fileObj.(stimname) = LRdB;
             PL(1).XData = 0:fs/length(x):fs - fs/length(x);
@@ -199,11 +206,12 @@ end
                 max(LRdB(:,2)),P0*10^(max(LRdB(:,2))/20),F0(LRdB(:,2) == max(LRdB(:,2))))    
 
             drawnow
+
         end
 
     end
 %end
-auio.release
+auio.release();
 % end
 
 % function StartStopExec(~,~)

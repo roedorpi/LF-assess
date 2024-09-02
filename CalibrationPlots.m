@@ -70,17 +70,19 @@ for i = [1 3]
                     CalRMS = ADC.IG40dB;
                 end
                  sig = obj.(vars{j})(fs:2*fs-1,:)./CalRMS;
+                 SIG = 20*log10(2*abs(fft(sig)./length(sig))/20e-6);
+
                  sig_ = oneThirdOctFiltBank(sig);
                  sig_allbands = squeeze(20*log10(rms(sig_)/20e-6));
                  Levels(a_indx,f_indx,:) = sig_allbands(f_indx,:);
                  Levels_all(a_indx,f_indx,:,:) = sig_allbands;
                  plot(ax1,0:1/fs:length(sig)/fs-1/fs,sig)
-                 stairs(ax2,FF,[sig_allbands; sig_allbands(end,:)])
+                 plot(ax2,0:fs/length(sig):fs-fs/length(sig),SIG)
                  
                  ax1.Title.String = sprintf('%s',vars{j});
                  ax1.Title.Interpreter = "none";
                  drawnow
-                 pause(2)
+                 pause
 
             end 
         else
