@@ -2,12 +2,6 @@ clear
 clc
 
 %%
-load("KemarMicCalib_20dB_input_gain.mat","CalRMS");
-ADC.IG20dB = CalRMS;
-clear CalRMS;
-load("KemarMicCalib_40dB_input_gain.mat","CalRMS");
-ADC.IG40dB = CalRMS;
-clear CalRMS;
 calfiles = dir('IP30_ID206465_*.mat');
 
 %% center frequencies of filters used in the calibration analysis
@@ -24,13 +18,13 @@ oneThirdOctFiltBank = octaveFilterBank("1/3 octave",fs, ...
 % Took out 750 Hz to match the 1/3 octave bands
 Fc = [50 63 80 100 125 150 200 250 316 400 500 630 800 1000 1250 1500 2000 2500 3150 4000 5000 6300 8000];
 %% attenuation levels
-Att = [0:-5:-95 -400];
+Att = [0:-5:-120 -400];
 %%
 
 f5 = figure(5);
 delete(f5.Children);
 ax1 = axes(Parent=f5,Position=[0.13 0.56 0.77 0.4],Box='on');
-ax2 = axes(Parent=f5,Position=[0.13 0.11 0.77 0.4],Box='on',NextPlot='add');
+ax2 = axes(Parent=f5,Position=[0.13 0.11 0.77 0.4],Box='on');
 
 ax2.XScale = 'log';
 ax2.XLim = [50 1000];
@@ -42,55 +36,71 @@ ax2.YGrid = "on";
 ax2.YLim = [0 120];
 ax2.XLabel.String = 'Frequency [Hz]';
 ax2.YLabel.String = 'Sound pressure level [dBSPL]';
-
+txt = text(2000,60,'','Parent',ax2);
 Frange = log2(ax2.XLim(end))-log2(ax2.XLim(1)); % how many decades (or octaves)
 dBrange = diff(ax2.YLim)/20; % denominator dB per decade desired.
 ax2.PlotBoxAspectRatio = [Frange/dBrange 1 1]; 
-
+Tl=line(0:1/fs:1-1/fs,zeros(fs,2),'parent',ax1);
+Fl=line(0:fs-1,zeros(fs,2),'parent',ax2);
 %%
 fs = 48000;
-for i = [1 3]
+for i = 1:length(calfiles)
     obj = matfile(calfiles(i).name);
+    outfilename = sprintf('%s_levels.mat',calfiles(i).name(1:end-4));
+    outfile = matfile(['Calib\' outfilename],'Writable',true);
     vars = who(obj);
     % select tones and attenuations
-    vars = vars(contains(vars,{'Freq_50_', 'Freq_63_','Freq_80_', 'Freq_100_', 'Freq_125_', 'Freq_150_', 'Freq_200_'})); % dont include 750 HZ
+    vars = vars(contains(vars,{'Freq_63_','Freq_80_', 'Freq_100_', ...
+        'Freq_125_', 'Freq_150_', 'Freq_200_'})); % dont include 750 HZ
+    vars = vars(contains(vars,'signal'));
     for j = 1:length(vars)
         param = regexp(vars{j},'_','split');
         % index of the played frequencies and attenuations
         f_indx = find(Fc == str2double(param{2}));
         a_indx = find(Att == -str2double(param{4}));
        
-        disp({F0(f_indx), Fc(f_indx), Att(a_indx)})
+        Freq{j} = sprintf('F_%i',Fc(f_indx)); 
+        Att_{j} = sprintf('A_%i',Att(a_indx));
 
         if strcmp(param{5},'signal')
-            if (i < 3 && str2double(param{4}) < 60) || (i > 1 && str2double(param{4}) > 50)
-                if i == 1
-                    CalRMS = ADC.IG20dB;
-                else
-                    CalRMS = ADC.IG40dB;
-                end
-                 sig = obj.(vars{j})(fs:2*fs-1,:)./CalRMS;
+            if (i < 3 && str2double(param{4}) < 60) || ...
+                    (i > 1 && str2double(param{4}) > 50)   
+                 sig = obj.(vars{j})(fs:2*fs-1,:);
                  SIG = 20*log10(2*abs(fft(sig)./length(sig))/20e-6);
-
+                 sig_dB_bb(a_indx,f_indx,:) = 20*log10(rms(sig)/20e-6);
                  sig_ = oneThirdOctFiltBank(sig);
                  sig_allbands = squeeze(20*log10(rms(sig_)/20e-6));
                  Levels(a_indx,f_indx,:) = sig_allbands(f_indx,:);
                  Levels_all(a_indx,f_indx,:,:) = sig_allbands;
-                 plot(ax1,0:1/fs:length(sig)/fs-1/fs,sig)
-                 plot(ax2,0:fs/length(sig):fs-fs/length(sig),SIG)
                  
+                 txt.String = sprintf('LdB re. 20\\mu Pa: %3.1f Left %3.1f Right',...
+                     sig_dB_bb(a_indx,f_indx,1),sig_dB_bb(a_indx,f_indx,2));
+                 Tl(1).YData = sig(:,1);
+                 Tl(2).YData = sig(:,2);
+                 Fl(1).YData = SIG(:,1);
+                 Fl(2).YData = SIG(:,2);
                  ax1.Title.String = sprintf('%s',vars{j});
                  ax1.Title.Interpreter = "none";
+                 
                  drawnow
-                 pause
-
+                % pause
+     
             end 
         else
            Levels_(a_indx,f_indx,:) = obj.(vars{j})(1,f_indx,:); 
         end
-        if Att(a_indx) < -90, delete(ax2.Children); end
     end
     
+    LevelsL = array2table(Levels(:,2:end,1));
+    LevelsR = array2table(Levels(:,2:end,2));
+    LevelsL.Properties.VariableNames = unique(Freq); 
+    LevelsL.Properties.RowNames = unique(Att_);
+    outfile.LevelsL = LevelsL;
+    outfile.LevelsR = LevelsR;
+    outfile.sig_dB_bb = sig_dB_bb;
+    outfile.Levels_all = Levels_all;
+    %outfile.FreqAtt = FreqAtt;
+
 end
 
 
